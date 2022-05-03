@@ -1,0 +1,47 @@
+
+name: CD
+
+on: [ push ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get Image Tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV_FOR_DEMO
+
+      - name: Build Docker image
+        run: docker build -f k8s/Dockerfile -t ghcr.io/my-org/driver-api:${IMAGE_TAG} .
+
+      - name: Login to Github Packages
+        uses: docker/login-action@v1
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        run: docker push ghcr.io/my-org/driver-api:${IMAGE_TAG}
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Get Image Tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::8}" >> $GITHUB_ENV
+
+      - name: Set K8S Context
+        uses: azure/k8s-set-context@v1
+        with:
+          method: kubeconfig
+          kubeconfig: ${{ secrets.KUBE_CLUSTER_CONFIG_FOR_DEMO }}
+
+      - name: Deploy on K8S
+        run: envsubst '${IMAGE_TAG}' < k8s/driver-api.k8s.yml | kubectl apply -f -
+
